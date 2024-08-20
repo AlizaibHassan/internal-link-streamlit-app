@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 import streamlit as st
 import pandas as pd
 import base64
+from lxml import etree
 from urllib.parse import urlparse, urljoin
 
 def reset_fields():
@@ -12,7 +13,7 @@ def reset_fields():
     selector = ""
     target_url = ""
 
-def find_urls_with_keywords_and_target(site_urls, keywords, target_url, selector):
+def find_urls_with_keywords_and_target(site_urls, keywords, target_url, xpath):
     passed_urls = []
     num_crawled = 0
     num_passed = 0
@@ -20,53 +21,52 @@ def find_urls_with_keywords_and_target(site_urls, keywords, target_url, selector
     progress_bar = st.sidebar.progress(0)
     parsed_target_url = urlparse(target_url)
     target_paths = [target_url, parsed_target_url.path]
-    
-    for i, url in enumerate(site_urls):
+
+    def get_content_area(url, xpath):
         try:
             response = requests.get(url)
-        except requests.exceptions.RequestException:
-            # Handle the exception (e.g., skip URL or display an error message)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.content, 'html.parser')
+            dom = etree.HTML(str(soup))
+            content_area = dom.xpath(xpath)
+            if content_area:
+                content_text = ''.join(content_area[0].itertext())
+                links = [a.get('href') for a in content_area[0].xpath('.//a')]
+                return url, content_text, links
+            else:
+                return url, '', []
+        except Exception as e:
+            print(f"Error fetching content area for {url}: {e}")
+            return url, '', []
+
+    for i, url in enumerate(site_urls):
+        url, content, links = get_content_area(url, xpath)
+        if not content:
             continue
-        soup = BeautifulSoup(response.content, "html.parser")
-        if selector:
-            selected_elements = soup.select(selector)
-            if not selected_elements:
-                continue
-            selected_html = "\n".join([str(element) for element in selected_elements])
-            soup = BeautifulSoup(selected_html, "html.parser")
-        
+
         # Check if the page already contains a link to the target URL
         link_to_target_found = False
-        for link in soup.find_all('a'):
-            if link.has_attr('href'):
-                href = link['href']
-                # Check for both absolute and relative paths
-                if href in target_paths or urljoin(url, href) in target_paths:
-                    link_to_target_found = True
-                    break
+        for link in links:
+            if link in target_paths or urljoin(url, link) in target_paths:
+                link_to_target_found = True
+                break
         
         if link_to_target_found:
             continue
-        
+
         keyword_found = False
+        found_anchors = []
         for keyword in keywords:
-            if keyword.lower() in soup.get_text().lower():
-                keyword_found = True
-                break
-        if not keyword_found:
-            continue
-        
-        keywords_on_page = []
-        for keyword in keywords:
-            if keyword.lower() in soup.get_text().lower():
-                keywords_on_page.append(keyword)
-        keywords_on_page_str = ', '.join(keywords_on_page)
-        passed_urls.append({'URL': url, 'Keywords Found': keywords_on_page_str})
-        num_passed += 1
+            if keyword.lower() in content.lower():
+                found_anchors.append(keyword)
+
+        if found_anchors:
+            passed_urls.append({'URL': url, 'Keywords Found': ', '.join(found_anchors)})
+            num_passed += 1
         num_crawled += 1
         progress_text.text(f"Crawling {i+1} out of {len(site_urls)}...")
         progress_bar.progress(int((i+1)/len(site_urls)*100))
-    
+
     return passed_urls
 
 def main():
@@ -89,27 +89,24 @@ def main():
         site_urls = site_urls.iloc[:, 0].tolist()
         st.success(f"Found {len(site_urls)} URLs.")
 
-
     # Keywords
     st.subheader("Keywords")
     keywords = st.text_area("Paste relevant keywords or terms below, one per line", placeholder="payday loans\nonline casino\ncbd vape pen", height=150)
     keywords = keywords.split("\n")
-        
-    # Selector
-    st.subheader("HTML Selector")
-    selector = st.text_input("Optional: Enter an HTML selector to narrow down the crawl scope & avoid sitewide elements", placeholder="Enter HTML selector (e.g., .content, #main, etc.)")
 
+    # XPath
+    st.subheader("HTML XPath")
+    xpath = st.text_input("Enter an XPath to narrow down the crawl scope", placeholder="Enter XPath (e.g., //*[@id='content'])")
 
     # Target URL
     st.subheader("Target URL")
     target_url = st.text_input("Target URL you're looking to add internal links to", placeholder="https://breaktheweb.agency/seo/seo-timeline")
 
     # Run crawler
-    if site_urls and keywords and target_url:
+    if site_urls and keywords and target_url and xpath:
         if st.button("Run Crawler"):
-            crawl_started = True  # Set crawl_started to True
             with st.spinner("Crawling in progress... be patient"):
-                passed_urls = find_urls_with_keywords_and_target(site_urls, keywords, target_url, selector)
+                passed_urls = find_urls_with_keywords_and_target(site_urls, keywords, target_url, xpath)
                 st.success(f"Finished crawling {len(site_urls)} URLs. Found {len(passed_urls)} internal linking opportunities.")
                 if passed_urls:
                     # Export results to CSV
@@ -135,7 +132,7 @@ def main():
             # Reset button
             if st.button("Reset"):
                 reset_fields()
-                    
+
     # Add guide
     st.markdown("---")
     st.markdown("""
@@ -154,10 +151,10 @@ def main():
 
     Keep in mind that some keywords might not be grammatically correct or natural in context, so be sure to use words that would be realistic anchors if deemed suitable.
 
-    ## Step 3: Specify an HTML Selector (Optional)
-    If you want to narrow down the crawl scope and avoid sitewide links in the main header or footer, you can enter an HTML selector from the source URL. This is optional, but highly recommended.
+    ## Step 3: Specify an XPath
+    To narrow down the crawl scope and avoid sitewide links in the main header or footer, you can enter an XPath. This is optional, but highly recommended.
 
-    Locate the section of the page in a source URL that contains the page content (blog article, page body template, etc.) and right-clicking that section > Select Inspect > In dev tools, drag your mouse up the hierarchy to locate the parent code that covers that section, ensuring header/footer are not highlighted > Right-click the code > Copy > Copy selector. 
+    Locate the section of the page in a source URL that contains the page content (blog article, page body template, etc.) and right-clicking that section > Select Inspect > In dev tools, drag your mouse up the hierarchy to locate the parent code that covers that section, ensuring header/footer are not highlighted > Right-click the code > Copy > Copy XPath.
 
     ## Step 4: Enter the Target URL
     Enter the URL that you're looking to add internal links to in the "Target URL" section.
@@ -171,6 +168,6 @@ def main():
     ## Step 7: Reset (Optional)
     If you want to run a new crawl with different parameters, click the "Reset" button to clear all fields and start over.
     """)
-                
+
 if __name__ == "__main__":
     main()
