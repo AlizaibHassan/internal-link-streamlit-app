@@ -1,165 +1,114 @@
+import streamlit as st
 import requests
 from bs4 import BeautifulSoup
-import streamlit as st
-import pandas as pd
-import base64
 from lxml import etree
+import pandas as pd
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.parse import urlparse, urljoin
 
-def reset_fields():
-    uploaded_file = None
-    site_urls = []
-    keywords = []
-    xpath_selector = ""
-    target_url = ""
+# Streamlit app configuration
+st.set_page_config(page_title="Internal Linking Finder Tool", layout="wide")
 
-def find_urls_with_keywords_and_target(site_urls, keywords, target_url, xpath_selector):
-    passed_urls = []
-    num_crawled = 0
-    num_passed = 0
-    progress_text = st.sidebar.empty()
-    progress_bar = st.sidebar.progress(0)
-    for i, url in enumerate(site_urls):
-        try:
-            response = requests.get(url)
-        except requests.exceptions.RequestException:
-            # Handle the exception (e.g., skip URL or display an error message)
-            continue
-        soup = BeautifulSoup(response.content, "html.parser")
-        dom = etree.HTML(str(soup))
-        selected_elements = dom.xpath(xpath_selector) if xpath_selector else [dom]
+# Title of the app
+st.title("Internal Linking Finder Tool")
 
-        if not selected_elements:
-            continue
-        selected_text = "\n".join([''.join(element.itertext()) for element in selected_elements])
-        keyword_found = False
-        link_to_target_found = False
-        for keyword in keywords:
-            if keyword.lower() in selected_text.lower():
-                keyword_found = True
-                break
-        if not keyword_found:
-            continue
-        for link in selected_elements[0].xpath('.//a[@href]'):
-            href = link.get('href')
-            if target_url in href:
-                link_to_target_found = True
-                break
-        if link_to_target_found:
-            continue
-        keywords_on_page = []
-        for keyword in keywords:
-            if keyword.lower() in selected_text.lower():
-                keywords_on_page.append(keyword)
-        keywords_on_page_str = ', '.join(keywords_on_page)
-        passed_urls.append({'URL': url, 'Keywords Found': keywords_on_page_str})
-        num_passed += 1
-        num_crawled += 1
-        progress_text.text(f"Crawling {i+1} out of {len(site_urls)}...")
-        progress_bar.progress(int((i+1)/len(site_urls)*100))
-    return passed_urls
+# Sidebar inputs
+st.sidebar.header("Input Data")
+urls_input = st.sidebar.text_area("Enter URLs (one per line)", height=200)
+xpath_input = st.sidebar.text_input("Enter XPath")
+anchors_input = st.sidebar.text_area("Enter Anchor Texts (one per line)", height=100)
+target_url_input = st.sidebar.text_input("Enter Target URL")
 
-def main():
-    st.set_page_config(page_title="Internal Linking Finder - a Break The Web tool", page_icon=":link:")
-    st.image("https://cdn-icons-png.flaticon.com/128/9841/9841627.png", width=40)
-    st.title("Internal Linking Finder")
-    st.markdown("""
-    This tool allows you to identify URLs not currently linking to the Target URL, and also include the keyword(s). 
-    \n
-    For more details on how to use this tool, see the [guide](#how-to-use-the-internal-link-finder-tool) below.
-    """)
+# Processing button
+if st.sidebar.button("Run Analysis"):
 
-    # CSV upload
-    st.subheader("Source URLs")
+    # Check if all fields are filled
+    if not urls_input or not xpath_input or not anchors_input or not target_url_input:
+        st.error("Please fill in all required fields.")
+    else:
+        # Read input data from fields
+        urls = urls_input.strip().splitlines()
+        xpath = xpath_input.strip()
+        anchor_texts = anchors_input.strip().splitlines()
+        target_url = target_url_input.strip()
 
-    site_urls = []
-    uploaded_file = st.file_uploader("First, upload the list of URLs you would like to check in a CSV file with the URLs in column A and no header", type="csv")
-    if uploaded_file is not None:
-        site_urls = pd.read_csv(uploaded_file)
-        site_urls = site_urls.iloc[:, 0].tolist()
-        st.success(f"Found {len(site_urls)} URLs.")
+        results = []
+        total_urls = len(urls)
+        completed_urls = 0
 
-
-    # Keywords
-    st.subheader("Keywords")
-    keywords = st.text_area("Paste relevant keywords or terms below, one per line", placeholder="payday loans\nonline casino\ncbd vape pen", height=150)
-    keywords = keywords.split("\n")
-        
-    # XPath Selector
-    st.subheader("XPath HTML Selector")
-    xpath_selector = st.text_input("Optional: Enter an XPath selector to narrow down the crawl scope & avoid sitewide elements", placeholder="//div[@id='content']")
-
-
-    # Target URL
-    st.subheader("Target URL")
-    target_url = st.text_input("Target URL you're looking to add internal links to", placeholder="https://breaktheweb.agency/seo/seo-timeline")
-
-    # Run crawler
-    if site_urls and keywords and target_url:
-        if st.button("Run Crawler"):
-            crawl_started = True  # Set crawl_started to True
-            with st.spinner("Crawling in progress... be patient"):
-                passed_urls = find_urls_with_keywords_and_target(site_urls, keywords, target_url, xpath_selector)
-                st.success(f"Finished crawling {len(site_urls)} URLs. Found {len(passed_urls)} internal linking opportunities.")
-                if passed_urls:
-                    # Export results to CSV
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    st.subheader("**Export Results to CSV**")
-                    st.write("Click the button below to export results to CSV:")
-                    data = {'URL': [], 'Keywords Found': []}
-                    for url in passed_urls:
-                        data['URL'].append(url['URL'])
-                        data['Keywords Found'].append(url['Keywords Found'])
-                    df = pd.DataFrame(data)
-                    csv = df.to_csv(index=False)
-                    b64 = base64.b64encode(csv.encode()).decode()
-                    filename = f"Internal Linking - {target_url}.csv"
-                    href = f'<a href="data:file/csv;base64,{b64}" download="{filename}"><button>Download CSV</button></a>'
-                    st.markdown(href, unsafe_allow_html=True)
+        # Function to get the content area using XPath and all <a> links
+        def get_content_area(url, xpath):
+            try:
+                response = requests.get(url)
+                response.raise_for_status()
+                soup = BeautifulSoup(response.content, 'html.parser')
+                dom = etree.HTML(str(soup))
+                content_area = dom.xpath(xpath)
+                if content_area:
+                    content_text = ''.join(content_area[0].itertext())
+                    links = [a.get('href') for a in content_area[0].xpath('.//a[@href]')]
+                    return url, content_text, links
                 else:
-                    st.warning("No URLs passed all checks.")
+                    return url, '', []
+            except Exception as e:
+                st.warning(f"Error fetching content area for {url}: {e}")
+                return url, '', []
 
-            # Show balloons when crawl is complete
-            st.balloons()
+        # Function to process each URL
+        def process_url(url):
+            global completed_urls
+            url, content, links = get_content_area(url, xpath)
+            if not content:
+                completed_urls += 1
+                return []
 
-            # Reset button
-            if st.button("Reset"):
-                reset_fields()
-                    
-    # Add guide
-    st.markdown("---")
-    st.markdown("""
-    # How to Use the Internal Link Finder Tool
-    The Internal Linking Finder was built by [Break The Web](https://breaktheweb.agency) to identify URLs on a given website that do not currently link to a specified target URL and also include specific terms.
+            # Check if target URL is in the list of <a> links
+            parsed_target_url = urlparse(target_url)
+            target_paths = [target_url, parsed_target_url.path]
+            
+            for link in links:
+                if link in target_paths or urljoin(url, link) in target_paths:
+                    completed_urls += 1
+                    return []
 
-    Here's a step-by-step guide on how to use this tool:
+            # Find anchor text keywords
+            local_results = []
+            found_anchors = []
+            for anchor in anchor_texts:
+                if anchor in content:
+                    found_anchors.append(anchor)
+            
+            if found_anchors:
+                local_results.append({
+                    'URL': url,
+                    'Anchor Texts': ', '.join(found_anchors)
+                })
+            
+            completed_urls += 1
+            return local_results
 
-    ## Step 1: Upload Source URLs
-    The first step in using the tool is to upload a list of URLs that you want to check. These URLs should be in a CSV file, with the URLs listed in column A and no header. This list can be gathered from a Sitemap or crawler such as Screaming Frog or Sitebulb.
+        # Use ThreadPoolExecutor for multithreading
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {executor.submit(process_url, url): url for url in urls}
+            
+            for future in as_completed(futures):
+                url_results = future.result()
+                if url_results:
+                    results.extend(url_results)
 
-    The more fine-tuned the list is, the faster the tool will work and the better the results.
-
-    ## Step 2: Enter Keywords
-    Next, enter the relevant keywords or terms that you want to check for in the URLs. These should be pasted into the text area under the "Keywords" section, one keyword per line.
-
-    Keep in mind that some keywords might not be grammatically correct or natural in context, so be sure to use words that would be realistic anchors if deemed suitable.
-
-    ## Step 3: Specify an XPath Selector (Optional)
-    If you want to narrow down the crawl scope and avoid sitewide links in the main header or footer, you can enter an XPath selector from the source URL. This is optional, but highly recommended.
-
-    Locate the section of the page in a source URL that contains the page content (blog article, page body template, etc.) and right-click that section > Select Inspect > In dev tools, drag your mouse up the hierarchy to locate the parent code that covers that section, ensuring header/footer are not highlighted > Right-click the code > Copy > Copy XPath. 
-
-    ## Step 4: Enter the Target URL
-    Enter the URL that you're looking to add internal links to in the "Target URL" section.
-
-    ## Step 5: Run the Crawler
-    Once you've entered all the necessary information, click the "Run Crawler" button to start the crawling process. The tool will then crawl each Source URL, checking for the presence of the specified keywords and whether each URL links to the target URL.
-
-    ## Step 6: View and Download Results
-    After the crawl is complete, the tool will display the number of URLs that passed all checks. If any URLs passed, you can download the results as a CSV file by clicking the "Download CSV" button.
-
-    ## Step 7: Reset (Optional)
-    If you want to run a new crawl with different parameters, click the "Reset" button to clear all fields and start over.
-    """)
-                
-if __name__ == "__main__":
-    main()
+        # Convert results to DataFrame and display in Streamlit
+        if results:
+            df = pd.DataFrame(results)
+            st.success("Analysis complete!")
+            st.dataframe(df)
+            
+            # Download button for results
+            csv = df.to_csv(index=False)
+            st.download_button(
+                label="Download CSV",
+                data=csv,
+                file_name='internal_link_suggestions.csv',
+                mime='text/csv',
+            )
+        else:
+            st.info("No internal linking suggestions found.")
