@@ -6,7 +6,63 @@ import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlparse, urljoin
 
-st.title("Internal Link Finder Tool")
+# Set custom CSS for centering and professional design
+st.markdown("""
+    <style>
+        .stApp {
+            background-color: #f5f5f5;
+        }
+        .main-content {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+        }
+        .stButton button {
+            width: 100%;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        .stButton button:hover {
+            background-color: #45a049;
+        }
+        .stTextInput input {
+            width: 100%;
+            padding: 10px;
+            margin: 6px 0;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        .stTextArea textarea {
+            width: 100%;
+            padding: 10px;
+            margin: 6px 0;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        .centered-text {
+            text-align: center;
+            font-size: 24px;
+            margin-bottom: 1rem;
+        }
+        .stDataFrame {
+            margin-top: 1.5rem;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+st.markdown('<div class="main-content">', unsafe_allow_html=True)
+
+st.markdown('<div class="centered-text"><b>Internal Link Finder Tool</b></div>', unsafe_allow_html=True)
 
 # Instructions for how to use the tool
 def show_instructions():
@@ -16,13 +72,13 @@ def show_instructions():
     The Internal Linking Finder was built by Break The Web to identify URLs on a given website that do not currently link to a specified target URL and also include specific terms.
 
     ### Step 1: Enter Source URLs
-    Enter a list of URLs that you want to check. These URLs should be in a list, each in a new line. This list can be gathered from a Sitemap or crawler such as Screaming Frog or Sitebulb.
+    Enter a list of URLs that you want to check. These URLs should be one per line. This list can be gathered from a Sitemap or crawler such as Screaming Frog or Sitebulb.
 
     ### Step 2: Enter Keywords
     Enter the relevant keywords or terms that you want to check for in the URLs. These should be pasted into the text area under the "Keywords" section, one keyword per line.
 
     ### Step 3: Specify an HTML Selector (Optional)
-    If you want to narrow down the crawl scope and avoid sitewide links in the main header or footer, you can enter an HTML selector from the source URL. This is optional but highly recommended.
+    If you want to narrow down the crawl scope and avoid sitewide links in the main header or footer, you can enter an HTML selector from the source URL. This is optional, but highly recommended.
 
     ### Step 4: Enter the Target URL
     Enter the URL that you're looking to add internal links to in the "Target URL" section.
@@ -119,3 +175,5 @@ if st.button("Run Crawler"):
 # Reset button to clear the inputs
 if st.button("Reset"):
     st.experimental_rerun()
+
+st.markdown('</div>', unsafe_allow_html=True)
