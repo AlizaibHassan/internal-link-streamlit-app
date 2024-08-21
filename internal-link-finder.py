@@ -15,14 +15,14 @@ def show_instructions():
 
     The Internal Linking Finder was built by Break The Web to identify URLs on a given website that do not currently link to a specified target URL and also include specific terms.
 
-    ### Step 1: Upload Source URLs
-    Upload a list of URLs that you want to check. These URLs should be in a CSV file, with the URLs listed in column A and no header. This list can be gathered from a Sitemap or crawler such as Screaming Frog or Sitebulb.
+    ### Step 1: Enter Source URLs
+    Enter a list of URLs that you want to check. These URLs should be in a list, each in a new line. This list can be gathered from a Sitemap or crawler such as Screaming Frog or Sitebulb.
 
     ### Step 2: Enter Keywords
     Enter the relevant keywords or terms that you want to check for in the URLs. These should be pasted into the text area under the "Keywords" section, one keyword per line.
 
     ### Step 3: Specify an HTML Selector (Optional)
-    If you want to narrow down the crawl scope and avoid sitewide links in the main header or footer, you can enter an HTML selector from the source URL. This is optional, but highly recommended.
+    If you want to narrow down the crawl scope and avoid sitewide links in the main header or footer, you can enter an HTML selector from the source URL. This is optional but highly recommended.
 
     ### Step 4: Enter the Target URL
     Enter the URL that you're looking to add internal links to in the "Target URL" section.
